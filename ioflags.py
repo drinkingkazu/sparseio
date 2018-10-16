@@ -13,7 +13,8 @@ def add_attributes(flags):
     flags.DATA_KEY   = 'data'
     flags.LABEL_KEY  = ''
     flags.SHUFFLE    = 1
-
+    flags.INPUT_THREADS = 1
+    
 def add_arguments(flags,parser):
 
     parser.add_argument('-io','--io_type',type=str,default=flags.IO_TYPE,
@@ -42,8 +43,11 @@ def _test():
     flags=FLAGS()
     add_attributes(flags)
     add_arguments(flags,parser)
-
-    args = parser.parse_args()
+    args = parser.parse_args()    
+    for name,value in vars(args).iteritems():
+        if name in ['func','script']: continue
+        print(name,value)
+        setattr(flags, name.upper(), value)
     update_attributes(flags,vars(args))
     print("\n\n-- CONFIG --")
     for name in vars(flags):
@@ -51,10 +55,7 @@ def _test():
         print("%s = %r" % (name, getattr(flags, name)))
 
     return flags
-        
+
+
 if __name__ == '__main__':
     _test()
-
-        
-
-    

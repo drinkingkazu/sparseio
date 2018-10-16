@@ -3,63 +3,66 @@ from __future__ import division
 from __future__ import print_function
 import numpy as np
 import sys
+import time
 import threading
 
-def threadio_func(io_handle, storage, thread_id):
+def threadio_func(io_handle, thread_id):
 
     while 1:
-        while not storage._locks[thread_id]:
+        time.sleep(0.00001)
+        while not io_handle._locks[thread_id]:
             idx_v   = []
             data_v  = []
             label_v = []
             if io_handle._flags.SHUFFLE:
-                idx = np.random.random([io_handle.num_entries()])*io_handle.num_entries()
-                idx = idx.astype(np.int32)
+                idx_v = np.random.random([io_handle.batch_size()])*io_handle.num_entries()
+                idx_v = idx_v.astype(np.int32)
             else:
-                start = storage._start_idx[thread_id]
+                start = io_handle._start_idx[thread_id]
                 end   = start + io_handle.batch_size()
-                idx = np.arange(start,end)
-                storage._start_idx[thread_id] = start + len(storage._threads) * io_handle.batch_size()
+                if end < io_handle.num_entries():
+                    idx_v = np.arange(start,end)
+                else:
+                    idx_v = np.arange(start,io_handle.num_entries())
+                    idx_v = np.concatenate([idx_v,np.arange(0,end-io_handle.num_entries())])
+                next_start = start + len(io_handle._threads) * io_handle.batch_size()
+                if next_start >= io_handle.num_entries():
+                    next_start -= io_handle.num_entries()
+                io_handle._start_idx[thread_id] = next_start
             
-            for i in idx:
-                data  = io_handle.data()[i]
-                label = io_handle.label()[i]
-                data_v.append(np.pad(data,(0,1),'constant',constant_values=(0,i)))
-                label_
-                              
-                data_v.append(io_handle.data()[i])
-                label_v.append(io_handle.label()[i])
-                idx_v.append(np.array([i]*len(data_v[-1])))
-            data  = np.vstack(data_v)
-            label = np.vstack(label_v)
-                
-    
-    storage._threaded = True
-    while storage._threaded:
-        time.sleep(0.000005)
-        if storage._filled: continue
-        storage._read_start_time = time.time()
-        while 1:
-            if proc.storage_status_array()[storage._storage_id] == 3:
-                storage._read_end_time=time.time()
-                break
-            time.sleep(0.000005)
-            continue
-        storage.next()
-        storage._event_ids     = proc.processed_entries(storage._storage_id)
-        storage._ttree_entries = proc.processed_entries(storage._storage_id)
+            for data_id, idx in enumerate(idx_v):
+                data  = io_handle._data  [idx]
+                data_v.append  (np.pad(data, [(0,0),(0,1)],'constant',constant_values=data_id))
+                if len(io_handle._label):
+                    label = io_handle._label [idx]
+                    label_v.append (np.pad(label,[(0,0),(0,1)],'constant',constant_values=data_id))
+            data_v  = np.vstack(data_v)
+            if len(label_v): label_v = np.vstack(label_v)
+            io_handle._buffs[thread_id] = (data_v,label_v,idx_v)
+            io_handle._locks[thread_id] = True
     return
 
-class ibuffer:
+class io_base(object):
+
     def __init__(self,flags):
-        self._locks   = [True] * flags.INPUT_THREADS
-        self._buffs   = [None] * flags.INPUT_THREADS
-        self._threads = [None] * flags.INPUT_THREADS
-        self._start_idx = [-1] * flags.INPUT_THREADS
-        self._end_idx   = [-1] * flags.INPUT_THREADS
-        self._batch_size = flags.BATCH_SIZE
+        self._batch_size   = flags.BATCH_SIZE
+        self._num_entries  = -1
+        self._num_channels = -1
+        self._data         = [] # should be a list of numpy arrays
+        self._label        = [] # should be a list of numpy arrays, same length as self._data
+        # For circular buffer / thread function controls
+        self._locks   = [False] * flags.INPUT_THREADS
+        self._buffs   = [None ] * flags.INPUT_THREADS
+        self._threads = [None ] * flags.INPUT_THREADS
+        self._start_idx = [-1 ] * flags.INPUT_THREADS
         self._last_buffer_id = -1
 
+    def num_entries(self):
+        return self._num_entries
+
+    def num_channels(self):
+        return self._num_channels
+        
     def stop_threads(self):
         if self._threasd[0] is None:
             return
@@ -75,54 +78,41 @@ class ibuffer:
             self._start_idx[i] = idx + i*self._batch_size
 
     def start_threads(self):
-        
-
-    def get(buffer_id=-1,release=True):
+        if self._threads[0] is not None:
+            return
+        for thread_id in range(len(self._threads)):
+            print('Starting thread',thread_id)
+            self._threads[thread_id] = threading.Thread(target = threadio_func, args=[self,thread_id])
+            self._threads[thread_id].daemon = True
+            self._threads[thread_id].start()
+            
+    def next(self,buffer_id=-1,release=True):
         if buffer_id >= len(self._locks):
             sys.stderr.write('Invalid buffer id requested: {:d}\n'.format(buffer_id))
             raise ValueError
         if buffer_id < 0: buffer_id = self._last_buffer_id + 1
         if buffer_id >= len(self._locks):
             buffer_id = 0
-        if self._buffs[buffer_id] is None:
+        if self._threads[buffer_id] is None:
             sys.stderr.write('Read-thread does not exist (did you initialize?)\n')
             raise ValueError
-        while self._locks[buffer_id]:
+        while not self._locks[buffer_id]:
             time.sleep(0.000001)
         res = self._buffs[buffer_id]
-        self._buffs[buffer_id] = None
-        self._locks[buffer_id] = False
-        self._last_buffer_id   = buffer_id
+        if release:
+            self._buffs[buffer_id] = None
+            self._locks[buffer_id] = False
+            self._last_buffer_id   = buffer_id
         return res
 
-class io_base(object):
-
-    def __init__(self,flags):
-        self._batch_size   = flags.BATCH_SIZE
-        self._num_entries  = -1
-        self._num_channels = -1
-        self._data         = [] # should be a list of numpy arrays
-        self._label        = [] # should be a list of numpy arrays, same length as self._data
-
-    def start_manager(self):
-   
     def batch_size(self,size=None):
         if size is None: return self._batch_size
         self._batch_size = int(size)
-
-    def num_entries(self):
-        return self._num_entries
-
-    def num_channels(self):
-        return self._num_channels
 
     def initialize(self):
         raise NotImplementedError
 
     def store(self,idx,softmax):
-        raise NotImplementedError
-
-    def next(self):
         raise NotImplementedError
 
     def finalize(self):
@@ -208,30 +198,6 @@ IOManager: {
             self._fout = larcv.IOManager(cfg_file.name)
             self._fout.initialize()
             
-    def next(self):
-        data,label=(None,None)
-        start,end=(-1,-1)
-        if self._flags.SHUFFLE:
-            start = int(np.random.random() * (self.num_entries() - self.batch_size()))
-            end   = start + self.batch_size()
-            idx   = np.arange(start,end,1)
-            data = self._data[start:end]
-            if len(self._label)  > 0: label  = self._label[start:end]
-        else:
-            start = self._last_entry+1
-            end   = start + self.batch_size()
-            if end < self.num_entries():
-                idx = np.arange(start,end,1)
-                data = self._data[start:end]
-                if len(self._label)  > 0: label  = self._label[start:end]
-            else:
-                idx = np.concatenate([np.arange(start,self.num_entries(),1),np.arange(0,end-self.num_entries(),1)])
-                data = self._data[start:] + self._data[0:end-self.num_entries()]
-                if len(self._label)  > 0: label  = self._label[start:]  + self._label[0:end-self.num_entries()]
-        self._last_entry = idx[-1]
-
-        return idx,data,label
-
     def store(self,idx,softmax):
         from larcv import larcv
         if self._fout is None:
@@ -331,25 +297,6 @@ class io_h5(io_base):
             label = self._label[idx]
             self._ohandler_label.append(label[None])
 
-    def next(self):
-        idx = None
-        if self._flags.SHUFFLE:
-            idx = np.arange(self.num_entries())
-            np.random.shuffle(idx)
-            idx = idx[0:self.batch_size()]
-        else:
-            start = self._last_entry+1
-            end   = start + self.batch_size()
-            if end < self.num_entries():
-                idx = np.arange(start,end)
-            else:
-                idx = np.concatenate([np.arange(start,self.num_entries()),np.arange(0,end-self.num_entries())])
-        self._last_entry = idx[-1]
-        data  = self._data[idx, ...]
-        label = None
-        if self._label  : label  = self._label[idx, ...]
-        return idx, data, label
-
     def finalize(self):
         if self._fout:
             self._fout.close()
@@ -361,19 +308,45 @@ def io_factory(flags):
         return io_larcv(flags)
     raise NotImplementedError
 
-if __name__ == '__main__':
-    from ioflags import _test
-    flags = _test()
+def _test():
+    import ioflags
+    flags = ioflags._test()
     io = io_factory(flags)
     io.initialize()
+    io.start_threads()
+    return io
+    
+if __name__ == '__main__':
+    io = _test()
     num_entries = io.num_entries()
     ctr = 0
+    data_check = 0
+    nfailures = 0
+    tspent_v = []
     while ctr < num_entries:
-        idx,data,label=io.next()
-        msg = str(ctr) + '/' + str(num_entries) + ' ... '  + str(idx) + ' ' + str(data[0].shape)
-        if label:
-            msg += str(label[0].shape)
+        tstart = time.time()
+        data,label,idx=io.next()
+        tspent = time.time() - tstart
+        tspent_v.append(tspent)
+        msg = 'Read count {:d}/{:d} time {:g} index start={:d} end={:d} ({:d} entries) shape {:s}'
+        msg = msg.format(ctr,num_entries,tspent,idx[0],idx[-1],len(idx),data.shape)
+        ctr+=len(idx)
         print(msg)
-        ctr += len(data)
-    io.finalize()
+        data_check += 1
+        if data_check % 20 == 0:
+            buf_start = data[0][0:3]
+            buf_end   = data[-1][0:3]
+            chk_start = io._data[idx[0]][0][0:3]
+            chk_end   = io._data[idx[-1]][-1][0:3]
+            good_start = (buf_start == chk_start).astype(np.int32).sum() == len(buf_start)
+            good_end   = (buf_end   == chk_end  ).astype(np.int32).sum() == len(buf_end)
 
+            print(buf_start,buf_end)
+            print(chk_start,chk_end)
+            print("Pass start/end? {:s}/{:s}".format(str(good_start),str(good_end)))
+            if not good_start or not good_end:
+                nfailures += 1
+    io.finalize()
+    tspent_v=np.array(tspent_v)
+    print('Number of data check failures:',nfailures)
+    print('Total time: {:g} [s] ... mean/std time-per-batch {:g}/{:g} [s]'.format(tspent_v.sum(),tspent_v.mean(),tspent_v.std()))
