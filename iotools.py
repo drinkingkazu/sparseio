@@ -9,7 +9,7 @@ import threading
 def threadio_func(io_handle, thread_id):
 
     while 1:
-        time.sleep(0.00001)
+        time.sleep(0.000001)
         while not io_handle._locks[thread_id]:
             idx_v   = []
             data_v  = []
@@ -56,6 +56,7 @@ class io_base(object):
         self._threads = [None ] * flags.INPUT_THREADS
         self._start_idx = [-1 ] * flags.INPUT_THREADS
         self._last_buffer_id = -1
+        self.set_index_start(0)
 
     def num_entries(self):
         return self._num_entries
@@ -64,7 +65,7 @@ class io_base(object):
         return self._num_channels
         
     def stop_threads(self):
-        if self._threasd[0] is None:
+        if self._threads[0] is None:
             return
         for i in range(len(self._threads)):
             while self._locks[buffer_id]:

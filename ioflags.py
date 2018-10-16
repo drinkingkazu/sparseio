@@ -13,7 +13,7 @@ def add_attributes(flags):
     flags.DATA_KEY   = 'data'
     flags.LABEL_KEY  = ''
     flags.SHUFFLE    = 1
-    flags.INPUT_THREADS = 1
+    flags.NUM_THREADS = 1
     
 def add_arguments(flags,parser):
 
@@ -31,6 +31,8 @@ def add_arguments(flags,parser):
                         help='A keyword to fetch label from file [default: %s]' % flags.LABEL_KEY)
     parser.add_argument('-sh','--shuffle',type=strtobool,default=flags.SHUFFLE,
                         help='Shuffle the data entries [default: %s]' % flags.SHUFFLE)
+    parser.add_argument('-nt','--num_threads',type=int,default=flags.NUM_THREADS,
+                        help='Number of threads to generate batch data [default: %s]' % flags.INPUT_THREADS)
     return parser
         
 def update_attributes(flags, args):
