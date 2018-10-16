@@ -3,6 +3,97 @@ from __future__ import division
 from __future__ import print_function
 import numpy as np
 import sys
+import threading
+
+def threadio_func(io_handle, storage, thread_id):
+
+    while 1:
+        while not storage._locks[thread_id]:
+            idx_v   = []
+            data_v  = []
+            label_v = []
+            if io_handle._flags.SHUFFLE:
+                idx = np.random.random([io_handle.num_entries()])*io_handle.num_entries()
+                idx = idx.astype(np.int32)
+            else:
+                start = storage._start_idx[thread_id]
+                end   = start + io_handle.batch_size()
+                idx = np.arange(start,end)
+                storage._start_idx[thread_id] = start + len(storage._threads) * io_handle.batch_size()
+            
+            for i in idx:
+                data  = io_handle.data()[i]
+                label = io_handle.label()[i]
+                data_v.append(np.pad(data,(0,1),'constant',constant_values=(0,i)))
+                label_
+                              
+                data_v.append(io_handle.data()[i])
+                label_v.append(io_handle.label()[i])
+                idx_v.append(np.array([i]*len(data_v[-1])))
+            data  = np.vstack(data_v)
+            label = np.vstack(label_v)
+                
+    
+    storage._threaded = True
+    while storage._threaded:
+        time.sleep(0.000005)
+        if storage._filled: continue
+        storage._read_start_time = time.time()
+        while 1:
+            if proc.storage_status_array()[storage._storage_id] == 3:
+                storage._read_end_time=time.time()
+                break
+            time.sleep(0.000005)
+            continue
+        storage.next()
+        storage._event_ids     = proc.processed_entries(storage._storage_id)
+        storage._ttree_entries = proc.processed_entries(storage._storage_id)
+    return
+
+class ibuffer:
+    def __init__(self,flags):
+        self._locks   = [True] * flags.INPUT_THREADS
+        self._buffs   = [None] * flags.INPUT_THREADS
+        self._threads = [None] * flags.INPUT_THREADS
+        self._start_idx = [-1] * flags.INPUT_THREADS
+        self._end_idx   = [-1] * flags.INPUT_THREADS
+        self._batch_size = flags.BATCH_SIZE
+        self._last_buffer_id = -1
+
+    def stop_threads(self):
+        if self._threasd[0] is None:
+            return
+        for i in range(len(self._threads)):
+            while self._locks[buffer_id]:
+                time.sleep(0.000001)
+            self._buffs[i] = None
+            self._start_idx[i] = -1
+
+    def set_index_start(self,idx):
+        self.stop_threads()
+        for i in range(len(self._threads)):
+            self._start_idx[i] = idx + i*self._batch_size
+
+    def start_threads(self):
+        
+
+    def get(buffer_id=-1,release=True):
+        if buffer_id >= len(self._locks):
+            sys.stderr.write('Invalid buffer id requested: {:d}\n'.format(buffer_id))
+            raise ValueError
+        if buffer_id < 0: buffer_id = self._last_buffer_id + 1
+        if buffer_id >= len(self._locks):
+            buffer_id = 0
+        if self._buffs[buffer_id] is None:
+            sys.stderr.write('Read-thread does not exist (did you initialize?)\n')
+            raise ValueError
+        while self._locks[buffer_id]:
+            time.sleep(0.000001)
+        res = self._buffs[buffer_id]
+        self._buffs[buffer_id] = None
+        self._locks[buffer_id] = False
+        self._last_buffer_id   = buffer_id
+        return res
 
 class io_base(object):
 
@@ -10,6 +101,10 @@ class io_base(object):
         self._batch_size   = flags.BATCH_SIZE
         self._num_entries  = -1
         self._num_channels = -1
+        self._data         = [] # should be a list of numpy arrays
+        self._label        = [] # should be a list of numpy arrays, same length as self._data
+
+    def start_manager(self):
    
     def batch_size(self,size=None):
         if size is None: return self._batch_size
