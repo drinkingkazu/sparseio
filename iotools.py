@@ -51,10 +51,10 @@ class io_base(object):
         self._data         = [] # should be a list of numpy arrays
         self._label        = [] # should be a list of numpy arrays, same length as self._data
         # For circular buffer / thread function controls
-        self._locks   = [False] * flags.INPUT_THREADS
-        self._buffs   = [None ] * flags.INPUT_THREADS
-        self._threads = [None ] * flags.INPUT_THREADS
-        self._start_idx = [-1 ] * flags.INPUT_THREADS
+        self._locks   = [False] * flags.NUM_THREADS
+        self._buffs   = [None ] * flags.NUM_THREADS
+        self._threads = [None ] * flags.NUM_THREADS
+        self._start_idx = [-1 ] * flags.NUM_THREADS
         self._last_buffer_id = -1
         self.set_index_start(0)
 
@@ -167,7 +167,8 @@ class io_larcv(io_base):
             if ch_label:
                 np_label = np.zeros(shape=(num_point,1),dtype=np.float32)
                 larcv.fill_3d_pcloud(br_label, np_label)
-                np_label = np_label.reshape([num_point]) - 1.
+                np_label = np_label - 1.
+                #np_label = np_label.reshape([num_point]) - 1.
                 self._label.append(np_label)
             total_point += np_data.size
             sys.stdout.write('Processed %d%% ... %d MB\r' % (int(event_fraction*i),int(total_point*4*2/1.e6)))
