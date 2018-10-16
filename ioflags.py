@@ -32,7 +32,7 @@ def add_arguments(flags,parser):
     parser.add_argument('-sh','--shuffle',type=strtobool,default=flags.SHUFFLE,
                         help='Shuffle the data entries [default: %s]' % flags.SHUFFLE)
     parser.add_argument('-nt','--num_threads',type=int,default=flags.NUM_THREADS,
-                        help='Number of threads to generate batch data [default: %s]' % flags.INPUT_THREADS)
+                        help='Number of threads to generate batch data [default: %s]' % flags.NUM_THREADS)
     return parser
         
 def update_attributes(flags, args):
